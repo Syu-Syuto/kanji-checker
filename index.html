@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>未習漢字チェッカー（自動読み提案＋前後文脈表示）</title>
+    <script src="https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/build/kuromoji.js"></script>
+    
+    <style>
+        body { font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif; margin: 20px; background-color: #f0f4f8; color: #333; }
+        h1 { font-size: 1.6rem; color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+        .container { display: flex; gap: 20px; max-width: 1200px; margin: 0 auto; flex-wrap: wrap; }
+        .panel { background: #fff; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); flex: 1; min-width: 300px; }
+        label { font-weight: bold; display: block; margin-top: 15px; margin-bottom: 8px; color: #2c3e50; }
+        select, textarea, input[type="text"] { width: 100%; padding: 10px; border: 1px solid #ccd1d9; border-radius: 4px; box-sizing: border-box; font-size: 1rem; }
+        textarea { height: 120px; resize: vertical; }
+        #inputText { height: 200px; }
+        .checkbox-group { margin-top: 10px; margin-bottom: 20px; background: #e8f4f8; padding: 10px; border-radius: 4px; }
+        
+        button.primary-btn { background-color: #3498db; color: white; border: none; padding: 12px 20px; font-size: 1.1rem; font-weight: bold; border-radius: 4px; cursor: pointer; margin-top: 20px; width: 100%; transition: background-color 0.2s; }
+        button.primary-btn:hover { background-color: #2980b9; }
+        button.primary-btn:disabled { background-color: #95a5a6; cursor: not-allowed; }
+        
+        button.batch-btn { background-color: #e67e22; color: white; border: none; padding: 10px 15px; font-size: 1rem; font-weight: bold; border-radius: 4px; cursor: pointer; margin-bottom: 10px; width: 100%; display: none; transition: background-color 0.2s; }
+        button.batch-btn:hover { background-color: #d35400; }
+
+        .jhs-note { display: none; color: #d35400; font-size: 0.85rem; margin-top: 5px; background: #fff4e6; padding: 8px; border-radius: 4px; border-left: 4px solid #e67e22; }
+
+        /* ハイライトのスタイル */
+        .result-box { min-height: 200px; padding: 20px; border: 1px solid #ccd1d9; border-radius: 4px; background: #fafafa; font-size: 1.15rem; line-height: 1.8; white-space: pre-wrap; }
+        .unlearned { background-color: #ffeaa7; color: #d35400; font-weight: bold; padding: 2px 4px; border-radius: 3px; cursor: pointer; border-bottom: 2px dashed #d35400; transition: background-color 0.2s; }
+        .unlearned:hover { background-color: #fad390; }
+
+        /* 文脈表示のスタイル */
+        .context-text { color: #95a5a6; font-size: 0.9em; margin: 0 4px; }
+        .target-text { color: #d35400; font-size: 1.1em; font-weight: bold; }
+
+        /* 一括変換モーダルのスタイル */
+        #modalOverlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 1000; justify-content: center; align-items: center; }
+        .modal-content { background: #fff; padding: 30px; border-radius: 8px; width: 90%; max-width: 600px; max-height: 85vh; display: flex; flex-direction: column; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
+        .modal-content h3 { margin-top: 0; color: #2c3e50; border-bottom: 2px solid #e67e22; padding-bottom: 10px; }
+        .modal-content p { font-size: 0.95rem; color: #555; margin-bottom: 15px; }
+        .table-container { overflow-y: auto; flex: 1; border: 1px solid #ddd; border-radius: 4px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 12px; border-bottom: 1px solid #ddd; text-align: left; }
+        th { background-color: #f5f7fa; position: sticky; top: 0; z-index: 1; }
+        td input[type="text"] { width: 100%; padding: 8px; font-size: 1rem; border: 1px solid #3498db; }
+        .modal-buttons { display: flex; gap: 15px; margin-top: 20px; }
+        .modal-buttons button { flex: 1; padding: 12px; font-size: 1.05rem; font-weight: bold; border: none; border-radius: 4px; cursor: pointer; }
+        .btn-exec { background-color: #2ecc71; color: white; }
+        .btn-exec:hover { background-color: #27ae60; }
+        .btn-cancel { background-color: #95a5a6; color: white; }
+        .btn-cancel:hover { background-color: #7f8c8d; }
+
+        /* 個別ポップアップのスタイル */
+        #tooltip { display: none; position: absolute; background: #fff; border: 1px solid #ccd1d9; padding: 15px; border-radius: 8px; box-shadow: 0 6px 12px rgba(0,0,0,0.15); z-index: 100; width: 280px; }
+        #tooltip h4 { margin: 0 0 10px 0; font-size: 1rem; color: #333; text-align: center; }
+        #tooltip input { margin-bottom: 12px; border: 1px solid #3498db; }
+        .tooltip-buttons { display: flex; gap: 10px; }
+        .tooltip-buttons button { margin-top: 0; padding: 8px 12px; font-size: 0.95rem; width: auto; flex: 1; border: none; border-radius:4px; cursor: pointer; color:white; }
+    </style>
+</head>
+<body>
+
+<h1>未習漢字チェッカー（自動読み提案＋文脈表示）</h1>
+
+<div class="container">
+    <div class="panel">
+        <label for="grade">対象学年（何年生向けに作成していますか？）</label>
+        <select id="grade">
+            <option value="1">小学1年生</option>
+            <option value="2">小学2年生</option>
+            <option value="3">小学3年生</option>
+            <option value="4">小学4年生</option>
+            <option value="5">小学5年生</option>
+            <option value="6">小学6年生</option>
+            <option value="7">中学1年生</option>
+            <option value="8">中学2年生</option>
+            <option value="9">中学3年生</option>
+        </select>
+        <div id="jhsNote" class="jhs-note">
+            ※中学校の漢字は国による学年別配当の指定がないため、一般的な目安で1〜3年に分割しています。
+        </div>
+
+        <div class="checkbox-group">
+            <input type="checkbox" id="includeCurrent" checked>
+            <label for="includeCurrent" style="display:inline; font-weight:normal;">選択した学年で習う漢字も「学習済み」に含める</label>
+        </div>
+
+        <label for="whitelist">ホワイトリスト（除外する漢字・単語）</label>
+        <textarea id="whitelist" placeholder="例：山田太郎、学校名など。ここに入力された文字に含まれる漢字は、未習であってもハイライトされません。"></textarea>
+
+        <label for="inputText">チェックする文章</label>
+        <textarea id="inputText" placeholder="ここに文章を入力してください。"></textarea>
+
+        <button id="checkBtn" class="primary-btn" onclick="analyzeText()" disabled>辞書データを読み込み中...</button>
+    </div>
+
+    <div class="panel">
+        <button id="batchBtn" class="batch-btn" onclick="openBatchModal()">リストを確認して一括ひらがな変換</button>
+        <label>チェック結果</label>
+        <div id="resultBox" class="result-box">左の「チェック実行」を押すと結果が表示されます。</div>
+    </div>
+</div>
+
+<div id="modalOverlay">
+    <div class="modal-content">
+        <h3>一括ひらがな変換リスト</h3>
+        <p>AIが推測したひらがなを確認・修正してください。<strong>空欄のままにした項目は、変換されず漢字のまま残ります。</strong></p>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 50%;">対象の文字（前後文脈）</th>
+                        <th style="width: 50%;">変換候補（手動修正可）</th>
+                    </tr>
+                </thead>
+                <tbody id="batchTableBody">
+                    </tbody>
+            </table>
+        </div>
+        <div class="modal-buttons">
+            <button class="btn-exec" onclick="executeBatchReplace()">チェック完了（一括で本文を書き換える）</button>
+            <button class="btn-cancel" onclick="closeBatchModal()">キャンセル</button>
+        </div>
+    </div>
+</div>
+
+<div id="tooltip">
+    <h4>
+        <span class="context-text" id="contextBefore"></span>
+        <span class="target-text" id="targetKanji"></span>
+        <span class="context-text" id="contextAfter"></span>
+    </h4>
+    <input type="text" id="replacementText" placeholder="ひらがなを入力">
+    <div class="tooltip-buttons">
+        <button class="btn-exec" onclick="replaceSingleKanji()">置換</button>
+        <button class="btn-cancel" onclick="closeTooltip()">中止</button>
+    </div>
+</div>
+
+<script>
+    // --- kuromoji.jsの初期化と辞書読み込み ---
+    let tokenizer = null;
+
+    window.onload = function() {
+        const checkBtn = document.getElementById('checkBtn');
+        kuromoji.builder({ dicPath: "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict" }).build(function (err, _tokenizer) {
+            if (err) {
+                console.error("辞書の読み込みに失敗しました:", err);
+                checkBtn.innerText = "辞書読み込みエラー（再読み込みしてください）";
+                return;
+            }
+            tokenizer = _tokenizer;
+            checkBtn.innerText = "チェック実行";
+            checkBtn.disabled = false;
+        });
+    };
+
+    function kanaToHira(str) {
+        return str.replace(/[\u30a1-\u30f6]/g, function(match) {
+            var chr = match.charCodeAt(0) - 0x60;
+            return String.fromCharCode(chr);
+        });
+    }
+
+    function getReadingSuggestion(text) {
+        if (!tokenizer) return ""; 
+        const tokens = tokenizer.tokenize(text);
+        let readingKatakana = "";
+        tokens.forEach(token => {
+            readingKatakana += token.reading ? token.reading : token.surface_form;
+        });
+        return kanaToHira(readingKatakana);
+    }
+
+    // 常用漢字データ
+    const kanjiData = {
+        1: "一右雨円王音下火花貝学気九休玉金空月犬見五口校左三山子四糸字耳七車手十出女小上森人水正生青夕石赤千川先早草足村大男竹中虫町天田土二日入年白八百文木本名目立力林六",
+        2: "引羽雲園遠何科夏家歌画回会海絵外角楽活間丸岩顔汽記帰弓牛魚京強教近兄形計元言原戸古午後語交光公工広考行高黄合谷国黒今才細作算止市矢姉思紙寺自時室社弱首秋週春書少場色食心新親図数西声星晴切雪船線前組走多太体台地池知茶昼長鳥朝直通弟店点電刀冬当東答頭同道読内南肉馬売買麦半番父風分聞米歩母方北毎妹万明鳴毛門夜野友用曜来里理話",
+        3: "悪安暗医委意育員院飲運泳駅央横屋温化炭寒感漢館岸起期客究急級宮球去橋業曲局銀区苦具君係軽血決研県庫湖向幸港号根祭皿仕死使始指歯詩次事持式実写者主守取酒受州拾終習集住重宿所暑助昭消商章勝乗植申身神真深進世整昔全相送想息速族他打対待代第題炭短談着注柱丁帳調追定庭笛鉄転都度投豆島湯登等動童農波配倍箱畑発反坂板皮悲美鼻筆氷表秒病品負部服福物平返勉放味命面問役薬由油有遊予羊洋葉陽様落流旅両緑礼列練路和",
+        4: "愛案以衣位茨印英栄塩億加果貨課芽改械害街各覚潟完官管関観願岐希季紀喜旗器機議求泣救給挙漁共協鏡競極熊訓軍郡径型景芸欠結建健験固功好香候航康告差菜最埼材崎昨札刷殺察参滋産散残氏司試児治鹿辞失借種周祝順初松笑唱焼象照賞臣信成省清静席積折節説浅戦選然争倉巣束側続卒孫帯隊達単置仲貯兆腸低底停的典伝徒努灯堂働特得毒栃奈熱念敗梅博阪飯飛費必票標不夫付府阜副粉兵別辺変便包法望牧末満未脈民無約勇要養浴利陸良料量輪類令冷例歴連老労録",
+        5: "圧移因永営衛易益液演応往桜恩可仮価河過賀快解格確額刊幹慣眼基寄規技義逆久旧居許境均禁句群経潔件券険検限現減故個護効厚耕鉱構興講混査再災妻採際在財罪雑酸賛支志枝師資飼示似識質舎謝授修述術準序招条状常情織職制性政勢精製税責績接設舌絶銭祖素総造像増則測属率損退貸態団断築張提程適敵統銅導徳独任燃能破犯判版比肥非備俵評貧布婦富武復複仏編弁保墓報豊防貿暴務夢迷綿輸余預容略留領",
+        6: "異遺域宇羽映延沿我灰拡革閣割株干巻看簡危机揮貴疑吸供胸郷勤筋系敬警劇激穴絹権憲源厳己呼誤后孝皇紅降鋼刻穀骨困砂座済裁策冊蚕至私姿視詞誌磁射捨尺若樹収宗就衆従縦縮熟純処署諸除将傷障城蒸針仁垂推寸盛聖誠宣専泉洗染善奏窓創装層操蔵臓存尊宅担探誕段暖値宙忠著庁頂潮賃痛展討党糖届難乳認納脳派拝背肺俳班晩否批秘腹奮並陛閉片補暮宝訪亡忘棒枚幕密盟模訳郵優幼欲翌乱卵覧裏律臨朗論",
+        7: "亜哀挨曖握扱宛嵐畏尉萎偉椅彙違維慰緯壱逸芋咽姻淫陰隠韻唄鬱畝浦餌叡影艶苑怨猿凹殴翁虞乙俺卸穏佳苛架華菓渦嫁暇禍靴寡箇稼蚊牙瓦雅餓介戒怪拐悔塊楷潰壊懐諧劾崖涯慨蓋該概骸垣柿核殻郭較隔獲嚇穫岳顎掛喝渇葛滑褐轄且釜鎌刈甘汗缶肝冠陥乾勘患貫喚堪換敢棺款閑勧寛歓監緩憾還艦玩頑企伎岐忌奇祈軌既飢鬼亀幾棋棄毀騎宜偽欺儀戯擬犠菊吉喫詰却脚虐及丘朽臼糾嗅窮巨拒拠虚距御凶叫狂享況峡挟狭恐恭脅矯響驚仰暁凝斤琴緊菌襟愚偶遇隅串屈掘窟繰勲薫刑泥恵慧憩掲携詣憬稽繋鶏鯨隙撃桁傑欠潔倦健兼剣圏堅嫌献遣権憲賢謙鍵繭顕懸幻玄孤弧枯雇誇鼓錮顧互呉娯悟碁勾孔巧甲江坑抗攻更拘肯侯恒洪荒郊香貢控梗喉慌硬絞項溝綱酵稿衡購乞拷剛傲豪克酷獄漉腰込頃墾婚恨懇昏昆根魂佐叉唆沙詐鎖裟挫采砕宰栽彩斎債催塞歳載際剤搾錯笹撮擦惨桟斬伺刺嗣施旨祉紫肢脂至諮賜雌侍慈滋璽痔而蒔汐鹿宍雫嫉悉湿漆疾蔀篠偲柴芝屡蕊縞舎赦斜煮遮蛇邪勺灼爵酌釈錫寂朱殊狩珠腫趣儒寿呪綬需囚",
+        8: "宗修愁洲秀繍臭舟蒐襲讐蹴輯酋酬醜什充戎柔汁渋獣縦銃叔夙淑粛塾俊峻舜駿准循殉淳潤盾純巡遵醇遵処初所暑曙渚庶緒署書薯藷諸助叙女序徐恕除傷償勝匠升召哨商唱嘗奨妾娼宵将小少尚庄床廠彰承抄招掌捷昇昌昭晶松梢樟樵沼消渉漿症硝礁祥称章笑粧紹肖菖蕉衝裳訟証詔詳象賞鐘障上丈丞乗冗城場壌嬢常情擾条杖浄状畳穣蒸譲醸錠嘱埴飾拭植殖燭織職色触食蝕辱尻伸信唇娠寝審心慎振新晋森榛浸深申疹真神秦紳臣芯薪親診身辛進針震人仁刃塵壬尋甚尽腎訊迅陣靭笥諏須図水吹垂炊帥粋衰翠錐誰遂酔随髄枢崇据杉斉逝誓隻戚斥脊拙窃仙占扇栓旋煎羨腺薦詮賎践選遷銭銑閃鮮漸禅繕塑措疎礎祖租粗素組蘇訴阻遡鼠僧創双叢倉喪壮奏爽宋層匝惣想捜掃挿掻操早曹巣槍槽漕燥争痩相窓糟総綜聡草荘葬蒼藻装走送遭鎗霜騒像増憎臓蔵贈造促側則即息捉束測足速俗属賊族続卒",
+        9: "堕妥惰駄耐怠胎泰堆袋逮滝卓択托託諾奪脱棚誰丹旦胆淡嘆端綻耽鍛弾壇恥致遅痴稚緻畜蓄逐秩窒嫡抽衷鋳駐弔彫貼超跳聴帳捗沈珍朕陳津墜椎鎚痛坪爪鶴呈廷抵邸亭貞諦溺徹撤迭塡点添貼殿澱吐妬途渡塗賭奴怒到逃倒凍唐桃透悼盗陶塔搭棟痘筒稲踏謄藤闘騰洞胴瞳峠匿督篤凸突屯豚頓貪鈍曇謎鍋軟尼弐匂虹尿妊忍寧捻粘悩濃把覇婆罵杯排廃輩培陪媒賠伯拍泊舶薄迫漠爆縛莫鉢髪伐抜罰閥氾帆汎伴畔般販斑搬煩頒範繁藩蛮盤妃彼披卑疲被扉碑罷避尾眉微膝肘匹泌姫漂苗描猫浜賓頻敏瓶扶怖附訃赴浮符普腐敷膚賦譜侮舞封伏幅覆払沸紛雰噴墳憤塀幣弊蔽餅壁璧癖蔑偏遍哺捕舗募慕簿芳邦奉抱泡胞俸倣峰砲崩蜂飽褒縫乏忙坊妨房肪某冒剖紡傍帽貌膨謀頰北僕墨撲朴没堀奔翻凡盆摩磨魔麻埋膜枕又抹慢漫魅岬蜜妙眠矛霧婿娘銘滅免麺茂妄盲耗厄躍闇諭癒唯幽悠憂融猶裕誘窯擁抑沃裸羅雷頼絡酪辣濫藍欄吏痢履璃離慄柳竜隆硫粒虜慮了涼猟陵僚寮療瞭糧厘倫隣瑠涙累塁励戻鈴零霊隷齢麗暦劣烈裂恋廉錬呂炉賂露老弄郎浪廊楼漏籠録麓湾腕"
+    };
+
+    document.getElementById('grade').addEventListener('change', function() {
+        document.getElementById('jhsNote').style.display = parseInt(this.value) >= 7 ? 'block' : 'none';
+    });
+
+    let unlearnedWordList = [];
+    let currentEditingId = null;
+
+    // 前後の文脈を取得する補助関数（改行はスペースに変換して見やすくする）
+    function getContext(text, startIdx, endIdx) {
+        let before = text.substring(Math.max(0, startIdx - 2), startIdx).replace(/\n/g, ' ');
+        let after = text.substring(endIdx, Math.min(text.length, endIdx + 2)).replace(/\n/g, ' ');
+        return { before, after };
+    }
+
+    // --- メイン解析処理 ---
+    function analyzeText() {
+        const targetGrade = parseInt(document.getElementById('grade').value);
+        const includeCurrent = document.getElementById('includeCurrent').checked;
+        const whitelistText = document.getElementById('whitelist').value;
+        const inputText = document.getElementById('inputText').value;
+
+        let learnedKanji = "";
+        let maxLearnedGrade = includeCurrent ? targetGrade : targetGrade - 1;
+        for (let i = 1; i <= maxLearnedGrade; i++) {
+            if (kanjiData[i]) learnedKanji += kanjiData[i];
+        }
+
+        const whitelistMatches = whitelistText.match(/[\u4E00-\u9FAF]/g);
+        if (whitelistMatches) {
+            learnedKanji += whitelistMatches.join('');
+        }
+
+        const resultBox = document.getElementById('resultBox');
+        let highlightedHTML = "";
+        let currentWord = "";
+        let currentStartIdx = 0;
+        
+        unlearnedWordList = [];
+
+        for (let i = 0; i < inputText.length; i++) {
+            let char = inputText[i];
+            
+            if (/[\u4E00-\u9FAF]/.test(char) && !learnedKanji.includes(char)) {
+                if (currentWord === "") currentStartIdx = i;
+                currentWord += char;
+            } else {
+                if (currentWord !== "") {
+                    let id = unlearnedWordList.length;
+                    let suggestion = getReadingSuggestion(currentWord);
+                    let ctx = getContext(inputText, currentStartIdx, i);
+                    
+                    unlearnedWordList.push({ 
+                        id: id, original: currentWord, suggestion: suggestion, 
+                        start: currentStartIdx, end: i,
+                        contextBefore: ctx.before, contextAfter: ctx.after
+                    });
+                    highlightedHTML += `<span class="unlearned" id="unlearned-${id}" onclick="openTooltip(this, ${id}, event)">${currentWord}</span>`;
+                    currentWord = "";
+                }
+                
+                if (char === '\n') {
+                    highlightedHTML += '<br>';
+                } else {
+                    char = char.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                    highlightedHTML += char;
+                }
+            }
+        }
+        
+        if (currentWord !== "") {
+            let id = unlearnedWordList.length;
+            let suggestion = getReadingSuggestion(currentWord);
+            let ctx = getContext(inputText, currentStartIdx, inputText.length);
+
+            unlearnedWordList.push({ 
+                id: id, original: currentWord, suggestion: suggestion, 
+                start: currentStartIdx, end: inputText.length,
+                contextBefore: ctx.before, contextAfter: ctx.after
+            });
+            highlightedHTML += `<span class="unlearned" id="unlearned-${id}" onclick="openTooltip(this, ${id}, event)">${currentWord}</span>`;
+        }
+
+        resultBox.innerHTML = highlightedHTML || "結果がここに表示されます。";
+        
+        const batchBtn = document.getElementById('batchBtn');
+        if (unlearnedWordList.length > 0) {
+            batchBtn.style.display = 'inline-block';
+            batchBtn.innerText = `リストを確認して一括ひらがな変換（対象：${unlearnedWordList.length}箇所）`;
+        } else {
+            batchBtn.style.display = 'none';
+        }
+    }
+
+    // --- 一括変換モーダルの処理 ---
+    const modalOverlay = document.getElementById('modalOverlay');
+    const batchTableBody = document.getElementById('batchTableBody');
+
+    function openBatchModal() {
+        batchTableBody.innerHTML = ""; 
+        
+        unlearnedWordList.forEach(item => {
+            let tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>
+                    <span class="context-text">${item.contextBefore}</span>
+                    <strong class="target-text">${item.original}</strong>
+                    <span class="context-text">${item.contextAfter}</span>
+                </td>
+                <td>
+                    <input type="text" id="batch-input-${item.id}" value="${item.suggestion}" placeholder="修正したいひらがなを入力">
+                </td>
+            `;
+            batchTableBody.appendChild(tr);
+        });
+
+        modalOverlay.style.display = 'flex';
+    }
+
+    function closeBatchModal() {
+        modalOverlay.style.display = 'none';
+    }
+
+    function executeBatchReplace() {
+        let text = document.getElementById('inputText').value;
+        let sortedList = [...unlearnedWordList].sort((a, b) => b.start - a.start);
+        
+        sortedList.forEach(item => {
+            let inputEl = document.getElementById(`batch-input-${item.id}`);
+            if (inputEl) {
+                let newValue = inputEl.value.trim();
+                if (newValue !== "") {
+                    text = text.substring(0, item.start) + newValue + text.substring(item.end);
+                }
+            }
+        });
+
+        document.getElementById('inputText').value = text;
+        closeBatchModal();
+        analyzeText();
+    }
+
+    // --- 個別ポップアップの処理 ---
+    const tooltip = document.getElementById('tooltip');
+    const targetKanjiSpan = document.getElementById('targetKanji');
+    const contextBeforeSpan = document.getElementById('contextBefore');
+    const contextAfterSpan = document.getElementById('contextAfter');
+    const replacementInput = document.getElementById('replacementText');
+
+    function openTooltip(spanElement, id, event) {
+        currentEditingId = id;
+        const item = unlearnedWordList.find(w => w.id === id);
+        if(!item) return;
+
+        contextBeforeSpan.textContent = item.contextBefore;
+        targetKanjiSpan.textContent = item.original;
+        contextAfterSpan.textContent = item.contextAfter;
+        replacementInput.value = item.suggestion || "";
+
+        const rect = spanElement.getBoundingClientRect();
+        tooltip.style.left = (rect.left + window.scrollX) + 'px';
+        tooltip.style.top = (rect.bottom + window.scrollY + 8) + 'px';
+        tooltip.style.display = 'block';
+        
+        replacementInput.focus();
+        event.stopPropagation();
+    }
+
+    function closeTooltip() {
+        tooltip.style.display = 'none';
+        currentEditingId = null;
+    }
+
+    function replaceSingleKanji() {
+        if (currentEditingId === null) return;
+        
+        const newValue = replacementInput.value.trim();
+        if (newValue !== "") {
+            const item = unlearnedWordList.find(w => w.id === currentEditingId);
+            let text = document.getElementById('inputText').value;
+            text = text.substring(0, item.start) + newValue + text.substring(item.end);
+            
+            document.getElementById('inputText').value = text;
+            analyzeText();
+        }
+        closeTooltip();
+    }
+
+    document.addEventListener('click', function(event) {
+        if (tooltip.style.display === 'block' && !tooltip.contains(event.target) && !event.target.classList.contains('unlearned')) {
+            closeTooltip();
+        }
+    });
+
+    replacementInput.addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') {
+            replaceSingleKanji();
+            e.preventDefault();
+        }
+    });
+</script>
+
+</body>
+</html>
