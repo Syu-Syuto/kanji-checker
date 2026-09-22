@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>未習漢字チェッカー（自動読み提案＋前後文脈表示）</title>
-    <script src="https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/build/kuromoji.js"></script>
+    <script src="./kuromoji.js"></script>
     
     <style>
         body { font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif; margin: 20px; background-color: #f0f4f8; color: #333; }
@@ -144,16 +144,21 @@
 
     window.onload = function() {
         const checkBtn = document.getElementById('checkBtn');
-        kuromoji.builder({ dicPath: "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict" }).build(function (err, _tokenizer) {
-            if (err) {
-                console.error("辞書の読み込みに失敗しました:", err);
-                checkBtn.innerText = "辞書読み込みエラー（再読み込みしてください）";
-                return;
-            }
-            tokenizer = _tokenizer;
-            checkBtn.innerText = "チェック実行";
-            checkBtn.disabled = false;
-        });
+        try {
+            kuromoji.builder({ dicPath: "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict" }).build(function (err, _tokenizer) {
+                if (err) {
+                    console.error("辞書の読み込みに失敗しました:", err);
+                    checkBtn.innerText = "辞書読み込みエラー（再読み込みしてください）";
+                    return;
+                }
+                tokenizer = _tokenizer;
+                checkBtn.innerText = "チェック実行";
+                checkBtn.disabled = false;
+            });
+        } catch (err) {
+            console.error("辞書の初期化に失敗しました:", err);
+            checkBtn.innerText = "辞書読み込みエラー（再読み込みしてください）";
+        }
     };
 
     function kanaToHira(str) {
